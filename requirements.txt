@@ -3,3 +3,6 @@ wheel
 python-telegram-bot==22.7
 google-ads==24.1.0
 google-auth-oauthlib==1.0.0
+google-api-python-client==2.120.0
+google-auth==2.29.0
+APScheduler==3.10.4
