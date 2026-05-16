@@ -1,4 +1,5 @@
-setuptools
+setuptools>=65.0.0
+wheel
 python-telegram-bot==22.7
-google-ads==21.3.0
+google-ads==24.1.0
 google-auth-oauthlib==1.0.0
