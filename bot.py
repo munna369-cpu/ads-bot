@@ -151,15 +151,100 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    update.message = query.message
+
     if query.data == "campaigns":
-        await campaigns(update, context)
+        await query.message.reply_text("Campaign list আনছি...")
+        try:
+            client = get_ads_client()
+            ga_service = client.get_service("GoogleAdsService")
+            q = """
+                SELECT campaign.id, campaign.name, campaign.status,
+                    metrics.clicks, metrics.impressions, metrics.cost_micros
+                FROM campaign
+                WHERE segments.date DURING LAST_30_DAYS
+                ORDER BY metrics.cost_micros DESC LIMIT 10
+            """
+            response = ga_service.search(customer_id=CUSTOMER_ID, query=q)
+            message = "Campaigns (শেষ ৩০ দিন):\n\n"
+            for row in response:
+                cost = row.metrics.cost_micros / 1_000_000
+                message += f"- {row.campaign.name}\n"
+                message += f"  Clicks: {row.metrics.clicks} | Cost: ${cost:.2f}\n\n"
+            await query.message.reply_text(message or "কোনো campaign নেই।")
+        except GoogleAdsException as ex:
+            await query.message.reply_text(f"Error: {ex.error.code().name}")
+
     elif query.data == "report":
-        await report(update, context)
+        await query.message.reply_text("Report তৈরি হচ্ছে...")
+        try:
+            client = get_ads_client()
+            ga_service = client.get_service("GoogleAdsService")
+            q = """
+                SELECT metrics.clicks, metrics.impressions,
+                    metrics.cost_micros, metrics.conversions
+                FROM customer
+                WHERE segments.date DURING LAST_7_DAYS
+            """
+            response = ga_service.search(customer_id=CUSTOMER_ID, query=q)
+            total_clicks = total_impressions = total_cost = total_conv = 0
+            for row in response:
+                total_clicks += row.metrics.clicks
+                total_impressions += row.metrics.impressions
+                total_cost += row.metrics.cost_micros / 1_000_000
+                total_conv += row.metrics.conversions
+            ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+            message = (
+                f"শেষ ৭ দিনের Report:\n\n"
+                f"Clicks: {total_clicks}\n"
+                f"Impressions: {total_impressions}\n"
+                f"Cost: ${total_cost:.2f}\n"
+                f"Conversions: {total_conv:.0f}\n"
+                f"CTR: {ctr:.2f}%"
+            )
+            await query.message.reply_text(message)
+        except GoogleAdsException as ex:
+            await query.message.reply_text(f"Error: {ex.error.code().name}")
+
     elif query.data == "leads":
-        await leads(update, context)
+        try:
+            client = get_ads_client()
+            ga_service = client.get_service("GoogleAdsService")
+            q = """
+                SELECT campaign.name, metrics.conversions, metrics.cost_per_conversion
+                FROM campaign
+                WHERE segments.date DURING LAST_30_DAYS AND metrics.conversions > 0
+            """
+            response = ga_service.search(customer_id=CUSTOMER_ID, query=q)
+            message = "Lead Report (শেষ ৩০ দিন):\n\n"
+            for row in response:
+                cpl = row.metrics.cost_per_conversion / 1_000_000
+                message += f"- {row.campaign.name}\n"
+                message += f"  Leads: {row.metrics.conversions:.0f} | CPL: ${cpl:.2f}\n\n"
+            await query.message.reply_text(message or "কোনো lead নেই।")
+        except GoogleAdsException as ex:
+            await query.message.reply_text(f"Error: {ex.error.code().name}")
+
     elif query.data == "status":
-        await status(update, context)
+        try:
+            client = get_ads_client()
+            ga_service = client.get_service("GoogleAdsService")
+            q = """
+                SELECT customer.id, customer.descriptive_name, customer.currency_code
+                FROM customer LIMIT 1
+            """
+            response = ga_service.search(customer_id=CUSTOMER_ID, query=q)
+            for row in response:
+                message = (
+                    f"Account Status:\n\n"
+                    f"Name: {row.customer.descriptive_name}\n"
+                    f"Currency: {row.customer.currency_code}\n"
+                    f"ID: {row.customer.id}\n"
+                    f"Status: Active"
+                )
+                await query.message.reply_text(message)
+                return
+        except GoogleAdsException as ex:
+            await query.message.reply_text(f"Error: {ex.error.code().name}")
 
 def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
