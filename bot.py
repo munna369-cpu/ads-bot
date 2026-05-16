@@ -50,7 +50,7 @@ def get_gtm_service():
 def is_authorized(user_id):
     return user_id == TELEGRAM_USER_ID
 
-async def send_loading(message, text="⏳ কাজ করছি, একটু অপেক্ষা করো..."):
+async def send_loading(message, text="⏳ কাজ করছি..."):
     return await message.reply_text(text)
 
 # ==============================
@@ -114,16 +114,23 @@ async def get_campaigns(message):
         """
         response = ga_service.search(customer_id=CUSTOMER_ID, query=query)
         msg = "📋 *Campaigns (শেষ ৩০ দিন):*\n\n"
+        count = 0
         for row in response:
             cost = row.metrics.cost_micros / 1_000_000
             status = "✅" if "ENABLED" in str(row.campaign.status) else "⏸️"
             msg += f"{status} *{row.campaign.name}*\n"
-            msg += f"   ID: `{row.campaign.id}` | Clicks: {row.metrics.clicks} | Cost: ${cost:.2f}\n\n"
+            msg += f"   Clicks: {row.metrics.clicks} | Cost: ${cost:.2f}\n\n"
+            count += 1
+        if count == 0:
+            msg = "কোনো campaign নেই।"
         await loading.delete()
-        await message.reply_text(msg or "কোনো campaign নেই।", parse_mode="Markdown")
+        await message.reply_text(msg, parse_mode="Markdown")
     except GoogleAdsException as ex:
         await loading.delete()
-        await message.reply_text(f"Error: {ex.error.code().name}")
+        await message.reply_text(f"❌ Google Ads Error: {ex.error.code().name}")
+    except Exception as ex:
+        await loading.delete()
+        await message.reply_text(f"❌ Error: {str(ex)[:300]}")
 
 async def get_report(message):
     loading = await send_loading(message, "📈 Report তৈরি হচ্ছে...")
@@ -158,7 +165,10 @@ async def get_report(message):
         await message.reply_text(msg, parse_mode="Markdown")
     except GoogleAdsException as ex:
         await loading.delete()
-        await message.reply_text(f"Error: {ex.error.code().name}")
+        await message.reply_text(f"❌ Google Ads Error: {ex.error.code().name}")
+    except Exception as ex:
+        await loading.delete()
+        await message.reply_text(f"❌ Error: {str(ex)[:300]}")
 
 async def get_leads(message):
     loading = await send_loading(message, "🎯 Lead report আনছি...")
@@ -172,15 +182,22 @@ async def get_leads(message):
         """
         response = ga_service.search(customer_id=CUSTOMER_ID, query=query)
         msg = "🎯 *Lead Report (শেষ ৩০ দিন):*\n\n"
+        count = 0
         for row in response:
             cpl = row.metrics.cost_per_conversion / 1_000_000
             msg += f"📌 *{row.campaign.name}*\n"
             msg += f"   Leads: `{row.metrics.conversions:.0f}` | CPL: `${cpl:.2f}`\n\n"
+            count += 1
+        if count == 0:
+            msg = "কোনো lead নেই।"
         await loading.delete()
-        await message.reply_text(msg or "কোনো lead নেই।", parse_mode="Markdown")
+        await message.reply_text(msg, parse_mode="Markdown")
     except GoogleAdsException as ex:
         await loading.delete()
-        await message.reply_text(f"Error: {ex.error.code().name}")
+        await message.reply_text(f"❌ Google Ads Error: {ex.error.code().name}")
+    except Exception as ex:
+        await loading.delete()
+        await message.reply_text(f"❌ Error: {str(ex)[:300]}")
 
 async def get_status(message):
     loading = await send_loading(message, "💰 Account status আনছি...")
@@ -192,6 +209,7 @@ async def get_status(message):
             FROM customer LIMIT 1
         """
         response = ga_service.search(customer_id=CUSTOMER_ID, query=query)
+        found = False
         for row in response:
             msg = (
                 f"💰 *Account Status:*\n\n"
@@ -202,10 +220,17 @@ async def get_status(message):
             )
             await loading.delete()
             await message.reply_text(msg, parse_mode="Markdown")
-            return
+            found = True
+            break
+        if not found:
+            await loading.delete()
+            await message.reply_text("❌ Account info পাওয়া যায়নি।")
     except GoogleAdsException as ex:
         await loading.delete()
-        await message.reply_text(f"Error: {ex.error.code().name}")
+        await message.reply_text(f"❌ Google Ads Error: {ex.error.code().name}")
+    except Exception as ex:
+        await loading.delete()
+        await message.reply_text(f"❌ Error: {str(ex)[:300]}")
 
 async def show_campaign_toggle(message):
     loading = await send_loading(message, "⏸️ Campaign list আনছি...")
@@ -236,7 +261,10 @@ async def show_campaign_toggle(message):
         )
     except GoogleAdsException as ex:
         await loading.delete()
-        await message.reply_text(f"Error: {ex.error.code().name}")
+        await message.reply_text(f"❌ Google Ads Error: {ex.error.code().name}")
+    except Exception as ex:
+        await loading.delete()
+        await message.reply_text(f"❌ Error: {str(ex)[:300]}")
 
 async def toggle_campaign(message, action, campaign_id):
     loading = await send_loading(message, "🔄 Campaign status বদলাচ্ছি...")
@@ -245,10 +273,7 @@ async def toggle_campaign(message, action, campaign_id):
         campaign_service = client.get_service("CampaignService")
         campaign = client.get_type("Campaign")
         campaign.resource_name = campaign_service.campaign_path(CUSTOMER_ID, campaign_id)
-        if action == "pause":
-            campaign.status = client.enums.CampaignStatusEnum.PAUSED
-        else:
-            campaign.status = client.enums.CampaignStatusEnum.ENABLED
+        campaign.status = client.enums.CampaignStatusEnum.PAUSED if action == "pause" else client.enums.CampaignStatusEnum.ENABLED
         field_mask = client.get_type("FieldMask")
         field_mask.paths.append("status")
         op = client.get_type("CampaignOperation")
@@ -260,7 +285,10 @@ async def toggle_campaign(message, action, campaign_id):
         await message.reply_text(f"✅ Campaign {status_text} করা হয়েছে!")
     except GoogleAdsException as ex:
         await loading.delete()
-        await message.reply_text(f"Error: {ex.error.code().name}")
+        await message.reply_text(f"❌ Google Ads Error: {ex.error.code().name}")
+    except Exception as ex:
+        await loading.delete()
+        await message.reply_text(f"❌ Error: {str(ex)[:300]}")
 
 async def show_budget_menu(message):
     loading = await send_loading(message, "💵 Campaign list আনছি...")
@@ -290,7 +318,10 @@ async def show_budget_menu(message):
         )
     except GoogleAdsException as ex:
         await loading.delete()
-        await message.reply_text(f"Error: {ex.error.code().name}")
+        await message.reply_text(f"❌ Google Ads Error: {ex.error.code().name}")
+    except Exception as ex:
+        await loading.delete()
+        await message.reply_text(f"❌ Error: {str(ex)[:300]}")
 
 # ==============================
 # GTM FUNCTIONS
@@ -307,70 +338,61 @@ async def gtm_containers(message):
         msg = "📦 *GTM Containers:*\n\n"
         for c in containers:
             msg += f"🔹 *{c.get('name')}*\n"
-            msg += f"   ID: `{c.get('containerId')}` | Type: `{c.get('usageContext', ['?'])[0]}`\n\n"
+            msg += f"   ID: `{c.get('containerId')}`\n\n"
         await loading.delete()
         await message.reply_text(msg or "কোনো container নেই।", parse_mode="Markdown")
     except Exception as ex:
         await loading.delete()
-        await message.reply_text(f"GTM Error: {str(ex)[:200]}")
+        await message.reply_text(f"❌ GTM Error: {str(ex)[:300]}")
 
 async def gtm_tags(message):
     loading = await send_loading(message, "🏷️ GTM tags আনছি...")
     try:
         service = get_gtm_service()
         parent = f"accounts/{GTM_ACCOUNT_ID}/containers/{GTM_CONTAINER_ID}/workspaces/1"
-        result = service.accounts().containers().workspaces().tags().list(
-            parent=parent
-        ).execute()
+        result = service.accounts().containers().workspaces().tags().list(parent=parent).execute()
         tags = result.get("tag", [])
         msg = "🏷️ *GTM Tags:*\n\n"
         for t in tags:
             status = "✅" if not t.get("paused") else "⏸️"
-            msg += f"{status} *{t.get('name')}*\n"
-            msg += f"   Type: `{t.get('type')}`\n\n"
+            msg += f"{status} *{t.get('name')}* — `{t.get('type')}`\n\n"
         await loading.delete()
         await message.reply_text(msg or "কোনো tag নেই।", parse_mode="Markdown")
     except Exception as ex:
         await loading.delete()
-        await message.reply_text(f"GTM Error: {str(ex)[:200]}")
+        await message.reply_text(f"❌ GTM Error: {str(ex)[:300]}")
 
 async def gtm_triggers(message):
     loading = await send_loading(message, "⚡ GTM triggers আনছি...")
     try:
         service = get_gtm_service()
         parent = f"accounts/{GTM_ACCOUNT_ID}/containers/{GTM_CONTAINER_ID}/workspaces/1"
-        result = service.accounts().containers().workspaces().triggers().list(
-            parent=parent
-        ).execute()
+        result = service.accounts().containers().workspaces().triggers().list(parent=parent).execute()
         triggers = result.get("trigger", [])
         msg = "⚡ *GTM Triggers:*\n\n"
         for t in triggers:
-            msg += f"🔸 *{t.get('name')}*\n"
-            msg += f"   Type: `{t.get('type')}`\n\n"
+            msg += f"🔸 *{t.get('name')}* — `{t.get('type')}`\n\n"
         await loading.delete()
         await message.reply_text(msg or "কোনো trigger নেই।", parse_mode="Markdown")
     except Exception as ex:
         await loading.delete()
-        await message.reply_text(f"GTM Error: {str(ex)[:200]}")
+        await message.reply_text(f"❌ GTM Error: {str(ex)[:300]}")
 
 async def gtm_variables(message):
     loading = await send_loading(message, "📝 GTM variables আনছি...")
     try:
         service = get_gtm_service()
         parent = f"accounts/{GTM_ACCOUNT_ID}/containers/{GTM_CONTAINER_ID}/workspaces/1"
-        result = service.accounts().containers().workspaces().variables().list(
-            parent=parent
-        ).execute()
+        result = service.accounts().containers().workspaces().variables().list(parent=parent).execute()
         variables = result.get("variable", [])
         msg = "📝 *GTM Variables:*\n\n"
         for v in variables:
-            msg += f"🔹 *{v.get('name')}*\n"
-            msg += f"   Type: `{v.get('type')}`\n\n"
+            msg += f"🔹 *{v.get('name')}* — `{v.get('type')}`\n\n"
         await loading.delete()
         await message.reply_text(msg or "কোনো variable নেই।", parse_mode="Markdown")
     except Exception as ex:
         await loading.delete()
-        await message.reply_text(f"GTM Error: {str(ex)[:200]}")
+        await message.reply_text(f"❌ GTM Error: {str(ex)[:300]}")
 
 async def gtm_publish(message):
     loading = await send_loading(message, "🚀 GTM publish করছি...")
@@ -379,7 +401,7 @@ async def gtm_publish(message):
         parent = f"accounts/{GTM_ACCOUNT_ID}/containers/{GTM_CONTAINER_ID}/workspaces/1"
         version = service.accounts().containers().workspaces().create_version(
             path=parent,
-            body={"name": "Auto-published version", "notes": "Published via Telegram Bot"}
+            body={"name": "Auto-published", "notes": "Published via Telegram Bot"}
         ).execute()
         version_id = version.get("containerVersion", {}).get("containerVersionId")
         service.accounts().containers().versions().publish(
@@ -389,7 +411,7 @@ async def gtm_publish(message):
         await message.reply_text(f"✅ GTM Version `{version_id}` publish হয়েছে!", parse_mode="Markdown")
     except Exception as ex:
         await loading.delete()
-        await message.reply_text(f"GTM Error: {str(ex)[:200]}")
+        await message.reply_text(f"❌ GTM Error: {str(ex)[:300]}")
 
 async def gtm_versions(message):
     loading = await send_loading(message, "🕐 Version history আনছি...")
@@ -399,15 +421,14 @@ async def gtm_versions(message):
             parent=f"accounts/{GTM_ACCOUNT_ID}/containers/{GTM_CONTAINER_ID}"
         ).execute()
         versions = result.get("containerVersionHeader", [])[:5]
-        msg = "🕐 *GTM Version History (শেষ ৫টা):*\n\n"
+        msg = "🕐 *GTM Version History:*\n\n"
         for v in versions:
-            msg += f"📌 Version `{v.get('containerVersionId')}`\n"
-            msg += f"   Name: {v.get('name', 'Unnamed')}\n\n"
+            msg += f"📌 Version `{v.get('containerVersionId')}` — {v.get('name', 'Unnamed')}\n\n"
         await loading.delete()
         await message.reply_text(msg or "কোনো version নেই।", parse_mode="Markdown")
     except Exception as ex:
         await loading.delete()
-        await message.reply_text(f"GTM Error: {str(ex)[:200]}")
+        await message.reply_text(f"❌ GTM Error: {str(ex)[:300]}")
 
 # ==============================
 # AUTO DAILY REPORT
@@ -441,7 +462,7 @@ async def send_daily_report(app):
         )
         await app.bot.send_message(chat_id=TELEGRAM_USER_ID, text=msg, parse_mode="Markdown")
     except Exception as ex:
-        await app.bot.send_message(chat_id=TELEGRAM_USER_ID, text=f"Auto report error: {str(ex)[:100]}")
+        await app.bot.send_message(chat_id=TELEGRAM_USER_ID, text=f"❌ Auto report error: {str(ex)[:200]}")
 
 # ==============================
 # BUTTON HANDLER
@@ -535,13 +556,16 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             budget_service.mutate_campaign_budgets(customer_id=CUSTOMER_ID, operations=[op])
             context.user_data.pop("budget_campaign_id", None)
             await loading.delete()
-            await update.message.reply_text(f"✅ Budget `${text}/day` সেট করা হয়েছে!", parse_mode="Markdown")
+            await update.message.reply_text(f"✅ Budget `${text}/day` সেট হয়েছে!", parse_mode="Markdown")
         else:
             await loading.delete()
             await update.message.reply_text("❌ Campaign খুঁজে পাওয়া যায়নি।")
     except GoogleAdsException as ex:
         await loading.delete()
-        await update.message.reply_text(f"Error: {ex.error.code().name}")
+        await update.message.reply_text(f"❌ Google Ads Error: {ex.error.code().name}")
+    except Exception as ex:
+        await loading.delete()
+        await update.message.reply_text(f"❌ Error: {str(ex)[:300]}")
 
 # ==============================
 # MAIN
